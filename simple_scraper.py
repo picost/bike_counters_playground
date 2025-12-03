@@ -14,6 +14,24 @@ class EcoCounterScraper(object):
     
     Note: This scraper relies on the current structure of the Eco-Counter
     display map pages and may break if the website changes.
+
+    Attributes
+    ----------
+    site_id: int or str
+        Eco-Counter site identifier.
+        E.g. "300037212" for Cagnes sur Mer (FR)
+    site_name_: str
+        Name of the site (initialized after first data fetch)
+        on the Eco-Counter display map.
+    site_location_: {"lat": float, "lon": float}
+        dict of geographic coordinates of the site 
+        (initialized after first data fetch)
+    site_first_data_: pd.Timestamp
+        Timestamp of the first available data for the site.
+    is_initialized: bool
+        True if the scraper has been initialized by fetching data,
+        which sets the values if attributes which names end with an 
+        underscore.
     """
     base_url = "https://eco-display-map.eco-counter.com"
     freq_to_granularity_api = {
@@ -75,6 +93,12 @@ class EcoCounterScraper(object):
         freq: str, default='D'
             Frequency/granularity ('D'=daily, 'W'=weekly, 'M'=monthly, 'Y'=yearly
 
+            
+        .. note::
+            If timestamps are tz-aware, they are converted to naive timestamps
+            in their timezone before processing.
+
+
         Returns
         -------
         pd.DataFrame :
@@ -88,9 +112,50 @@ class EcoCounterScraper(object):
         ValueError: 
             If dates are invalid or frequency not supported
         requests.RequestException: If HTTP request fails
+
+        Notes
+        -----
+        The function works as follows:
+        1. Validate and sets default dates if necessary.
+        2. If the requested period is longer than one year with daily frequency,
+           split the requests into multiple calls. This is due to a limitation of
+           the Eco-Counter API which prevents retrieving more than one year of daily
+           data in a single request.
+        3. Call the internal method to scrape the data.
+        4. Extract and combine global and directional counts into a single DataFrame.
+           This step initializes the scraper as a side effect if it hasn't been done yet.
+
+        .. seeasalso::
+            
+            :py::meth:`_scrape_count_structure` : Internal method to scrape the data.
+
+
         """
-        end = pd.Timestamp(end) if end is not None else pd.Timestamp.now(tz='Europe/Paris')
+        end = pd.Timestamp(end) if end is not None else pd.Timestamp.now(tz=None).normalize()
         start = pd.Timestamp(start) if start is not None else end - pd.tseries.frequencies.to_offset(freq)
+        if start.tzinfo is not None:
+            start = start.tz_convert(None)
+        if end.tzinfo is not None:
+            end = end.tz_convert(None)
+        # Recursive calls if period longer than a year and frequency is daily
+        data_span = end - start
+        if freq == 'D' and data_span > pd.Timedelta(days=364):
+            self.logger.debug("Requested period longer than 1 year with daily frequency. Splitting requests...")
+            all_data = []
+            current_start = start.normalize()
+            while current_start < end:
+                current_end = min(current_start + pd.DateOffset(days=364), end.normalize())
+                self.logger.debug(f"Fetch data from {current_start.date()} to {current_end.date()}...")
+                chunk_data = self.fetch_counts(
+                    start=current_start,
+                    end=current_end,
+                    freq=freq,
+                )
+                all_data.append(chunk_data)
+                current_start = current_end + pd.DateOffset(days=1) # inclusive bounds
+            self.logger.debug("Combine all data chunks.")
+            data = pd.concat(all_data)
+            return data
         # Scrape the data
         json_like_data = self._scrape_count_structure(
             self.site_id,
@@ -98,10 +163,44 @@ class EcoCounterScraper(object):
             end,
             freq,
         )
+        if self.debug:
+            self.scraped_json_data_ = json_like_data
         # Extract and combine global and directional counts
         data = (self._extract_global_counts(json_like_data)
                     .join(self._extract_directional_counts(json_like_data), how='outer'))
         return data
+    
+    def fetch_all_counts(
+        self,
+        freq='D',
+        ):
+        """Fetch all available count data from Eco-Counter display map.
+        
+        Parameters
+        ---------
+        freq: str, default='D'
+            Frequency/granularity ('D'=daily, 'W'=weekly, 'M'=monthly, 'Y'=yearly)
+
+        Returns
+        -------
+        pd.DataFrame :
+            DataFrame containing the count data with a DateTimeIndex and
+            three columns: 'count', 'in', 'out'.
+
+        Notes
+        -----
+        This is a convenience method that fetches all available data
+        by determining the first available date and calling `fetch_counts`.
+
+        A first call to `fetch_counts` is made to initialize the scraper. It 
+        requests the last day of data to get the first available date.
+        """
+        if not self.is_initialized:
+            # Initial call to get first data date
+            self.fetch_counts()
+        start = self.site_first_data_
+        end = pd.Timestamp.now(tz=None).normalize()
+        return self.fetch_counts(start=start, end=end, freq=freq)
 
     #========================================================
     def _scrape_count_structure(
@@ -370,7 +469,8 @@ class EcoCounterScraper(object):
             DataFrame with DateTimeIndex and a single 'count' column.
         """
         data_table = pd.DataFrame(
-            [(pd.Timestamp(entry['timestamp']), entry['traffic']['counts']) for entry in data_field],
+            [(pd.Timestamp(entry['timestamp']).tz_localize(None), 
+              entry['traffic']['counts']) for entry in data_field],
             columns=['timestamp', 'count'],
         )
         return data_table.set_index('timestamp')
@@ -431,7 +531,7 @@ class EcoCounterScraper(object):
             'lat': float(site_data['lat']),
             'lon': float(site_data['lon']),
         }
-        self.site_first_data_ = pd.Timestamp(site_data['first_data'])
+        self.site_first_data_ = pd.Timestamp(site_data['first_data']).tz_localize(None)
         return site_data
         
     def _set_direction_names(self, fetched_data):
