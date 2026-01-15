@@ -32,6 +32,9 @@ class EcoCounterScraper(object):
         True if the scraper has been initialized by fetching data,
         which sets the values if attributes which names end with an 
         underscore.
+    nickname: str or None
+        An optional nickname for the site.
+        
     """
     base_url = "https://eco-display-map.eco-counter.com"
     freq_to_granularity_api = {
@@ -41,7 +44,7 @@ class EcoCounterScraper(object):
         "Y": "P1Y",    # Year
     }
 
-    def __init__(self, site_id, debug=False):
+    def __init__(self, site_id, nickname=None, debug=False):
         """Initialize the scraper with an optional site identifier.
 
         Parameters
@@ -49,12 +52,19 @@ class EcoCounterScraper(object):
         site_id: int or str
             Eco-Counter site identifier.
             E.g. "300037212" for Cagnes sur Mer (FR)
+        nickname: str, optional
+            An optional nickname for the site.
+        debug: bool, default=False
+            If True, store the raw scraped JSON data in the attribute
+            `scraped_json_data_` for debugging purposes.
+        
         """
         self._site_id = site_id
         # site_id_cagnes_littoral = "300037212"  # Cagnes sur Mer (FR)
         self.logger = logging.getLogger(f"{self.__class__.__name__}.site_{site_id}")
         self.is_initialized = False
         self.debug = debug
+        self.nickname = nickname
 
     def __repr__(self):
         s_repr= (
@@ -522,6 +532,7 @@ class EcoCounterScraper(object):
         """
         meta_data_pattern = (r'\\"currentSite\\":{\\"id\\":(?P<site_id>[\d]+),'
                              r'\\"name\\":\\"(?P<site_name>.*?)\\",'
+                             r'.*?'
                              r'\\"location\\":{\\"lat\\":(?P<lat>[-\d.]+),'
                              r'\\"lon\\":(?P<lon>[-\d.]+)},'
                              r'\\"firstData\\":\\"(?P<first_data>.*?)\\",')
