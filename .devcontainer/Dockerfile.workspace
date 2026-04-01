@@ -1,0 +1,16 @@
+FROM python:3.13-slim-bookworm
+
+# Install uv and system dependencies required during environment creation.
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+	apt-get clean && \
+	rm -rf /var/lib/apt/lists/*
+
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh -s -- --yes --bin-dir /usr/local/bin
+
+WORKDIR /home/
+COPY .build_workspace/environments/requirements_dev.txt .build_workspace/environments/create_dev_env.sh ./
+RUN /bin/bash -c "source create_dev_env.sh"
+
+RUN git config --global core.editor "code --wait"
+
+CMD ["/bin/sh", "-c", "bash"]

@@ -1,0 +1,16 @@
+services:
+
+# Rebuild and restart workspace without cache:
+# docker-compose -f .devcontainer/docker-compose.yaml --project-name prototype_workspace_devcontainer build --no-cache workspace
+# docker-compose -f .devcontainer/docker-compose.yaml --project-name prototype_workspace_devcontainer up -d workspace
+  workspace:
+    build:
+      context: ..
+      dockerfile: .devcontainer/Dockerfile.workspace
+    volumes:
+      - ..:/workspace:cached
+      - workspace-config:/etc/workspace_configs
+    command: /bin/sh -c "while sleep 1000; do :; done"
+
+volumes:
+  workspace-config:
