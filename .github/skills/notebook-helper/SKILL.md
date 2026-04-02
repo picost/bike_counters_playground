@@ -40,6 +40,7 @@ Provide a reusable, agent-agnostic workflow for helping in notebooks while keepi
   - the rationale for the next step if applicable.
 - Notebook wording must be in English unless the user explicitly asks otherwise.
 - Avoid first-person wording in notebook content.
+- No sections numbering.
 
 ## Cell Size and Focus (Mandatory)
 - Each code cell should accomplish **one conceptual step** only.
