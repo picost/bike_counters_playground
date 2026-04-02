@@ -1,11 +1,12 @@
 FROM python:3.13-slim-bookworm
 
+# Copy uv binaries from the official Astral image instead of running the shell installer.
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
+
 # Install uv and system dependencies required during environment creation.
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates && \
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git && \
 	apt-get clean && \
 	rm -rf /var/lib/apt/lists/*
-
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh -s -- --yes --bin-dir /usr/local/bin
 
 WORKDIR /home/
 COPY .build_workspace/environments/requirements_dev.txt .build_workspace/environments/create_dev_env.sh ./
